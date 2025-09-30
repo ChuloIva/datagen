@@ -27,7 +27,6 @@ datagen/
 ├── prompt_templates.py      # Template system for diversity
 ├── data_generator.py        # Core generation engine with async
 ├── Cognitive_Action_Data_Generator_Colab.ipynb  # Production notebook
-└── Upload_to_HuggingFace.ipynb                  # Dataset publishing
 ```
 
 ## 📦 Core Components
@@ -198,16 +197,6 @@ export OLLAMA_HOST=0.0.0.0:11434   # Server address
 
 Model loads **once** (18GB), parallel contexts add memory dynamically.
 
-## 📤 Publishing Dataset
-
-Use `Upload_to_HuggingFace.ipynb` to publish your dataset:
-
-1. Run the notebook
-2. Enter HF token (from https://huggingface.co/settings/tokens)
-3. Choose dataset name (e.g., `username/cognitive-actions-7k`)
-4. Automatic README generation with statistics
-5. Creates train/test split (90/10)
-6. Uploads and verifies
 
 ## 📈 Quality Metrics
 
