@@ -268,24 +268,27 @@ def generate_template_parameters(cognitive_action_key, template_type="single"):
         'forbidden_words': ', '.join(base_params['forbidden_words']),
     }
 
+    # Add common template parameters used across all types
+    params.update({
+        'situation': f"dealing with {get_context_detail(domain)}",
+        'initial_state': f"initially feeling {random.choice(EMOTIONAL_STATES)}",
+        'result_direction': f"moving toward {random.choice(['clarity', 'acceptance', 'understanding', 'resolution', 'peace'])}",
+        'focus_element': random.choice(['emotional reactions', 'underlying assumptions', 'behavioral patterns', 'decision criteria']),
+        'problem_type': f"a challenge involving {random.choice(['conflicting values', 'unclear options', 'emotional complexity', 'competing priorities'])}",
+        'process_stages': "awareness → questioning → exploration → insight",
+        'required_element': random.choice(['self-compassion', 'specific details', 'emotional honesty', 'multiple perspectives']),
+        'complication': random.choice(['time pressure', 'conflicting advice', 'emotional resistance', 'unclear information']),
+        'avoid_phrases': ', '.join(random.sample(['I realized', 'suddenly understood', 'it hit me', 'I saw that'], 2)),
+        'specific_trigger': params['trigger'],
+        'outcome_direction': random.choice(['greater clarity', 'reduced anxiety', 'new perspective', 'deeper understanding']),
+        'time_frame': random.choice(['in that moment', 'over several days', 'gradually', 'after some time']),
+        'metacognitive_focus': random.choice(['thinking patterns', 'emotional reactions', 'decision process', 'assumptions']),
+        'metacognitive_element': random.choice(['awareness of their own bias', 'recognition of their pattern', 'questioning their approach'])
+    })
+
     # Add template-specific parameters
     if template_type == "single":
-        params.update({
-            'situation': f"dealing with {get_context_detail(domain)}",
-            'initial_state': f"initially feeling {random.choice(EMOTIONAL_STATES)}",
-            'result_direction': f"moving toward {random.choice(['clarity', 'acceptance', 'understanding', 'resolution', 'peace'])}",
-            'focus_element': random.choice(['emotional reactions', 'underlying assumptions', 'behavioral patterns', 'decision criteria']),
-            'problem_type': f"a challenge involving {random.choice(['conflicting values', 'unclear options', 'emotional complexity', 'competing priorities'])}",
-            'process_stages': "awareness → questioning → exploration → insight",
-            'required_element': random.choice(['self-compassion', 'specific details', 'emotional honesty', 'multiple perspectives']),
-            'complication': random.choice(['time pressure', 'conflicting advice', 'emotional resistance', 'unclear information']),
-            'avoid_phrases': ', '.join(random.sample(['I realized', 'suddenly understood', 'it hit me', 'I saw that'], 2)),
-            'specific_trigger': params['trigger'],
-            'outcome_direction': random.choice(['greater clarity', 'reduced anxiety', 'new perspective', 'deeper understanding']),
-            'time_frame': random.choice(['in that moment', 'over several days', 'gradually', 'after some time']),
-            'metacognitive_focus': random.choice(['thinking patterns', 'emotional reactions', 'decision process', 'assumptions']),
-            'metacognitive_element': random.choice(['awareness of their own bias', 'recognition of their pattern', 'questioning their approach'])
-        })
+        pass  # All parameters already added above
 
     elif template_type == "chain":
         actions = get_cognitive_action_chains(3)

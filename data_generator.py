@@ -100,7 +100,8 @@ class CognitiveDataGenerator:
                       batch_size: int = 10,
                       cognitive_action: Optional[str] = None,
                       template_type: str = "single",
-                      model: str = "llama3.2") -> List[GeneratedExample]:
+                      model: str = "llama3.2",
+                      delay: float = 0.1) -> List[GeneratedExample]:
         """Generate a batch of examples"""
         examples = []
 
@@ -111,7 +112,7 @@ class CognitiveDataGenerator:
                 print(f"Generated example {i+1}/{batch_size}: {example.primary_cognitive_action}")
 
             # Small delay to avoid overwhelming the API
-            time.sleep(0.1)
+            time.sleep(delay)
 
         return examples
 
