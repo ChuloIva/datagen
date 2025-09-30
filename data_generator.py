@@ -6,6 +6,8 @@ Integrates with Ollama for LLM generation
 import json
 import time
 import random
+import asyncio
+import aiohttp
 from typing import List, Dict, Any, Optional
 from dataclasses import dataclass
 from variable_pools import COGNITIVE_ACTIONS, get_random_selection
@@ -26,8 +28,13 @@ class GeneratedExample:
 class CognitiveDataGenerator:
     """Main class for generating cognitive action training data"""
 
-    def __init__(self, ollama_client=None):
-        """Initialize the generator with optional Ollama client"""
+    def __init__(self, ollama_client=None, max_parallel=4):
+        """Initialize the generator with optional Ollama client
+
+        Args:
+            ollama_client: Ollama client instance
+            max_parallel: Maximum number of parallel requests (default: 4)
+        """
         self.ollama_client = ollama_client
         self.generated_examples = []
         self.generation_stats = {
@@ -37,11 +44,12 @@ class CognitiveDataGenerator:
             'by_complexity': {},
             'errors': []
         }
+        self.max_parallel = max_parallel
 
     def generate_single_example(self,
                                cognitive_action: Optional[str] = None,
                                template_type: str = "single",
-                               model: str = "llama3.2") -> Optional[GeneratedExample]:
+                               model: str = "gemma3:27b") -> Optional[GeneratedExample]:
         """Generate a single training example"""
         try:
             # Generate prompt
@@ -96,29 +104,162 @@ class CognitiveDataGenerator:
             print(f"Error generating example: {e}")
             return None
 
+    async def _generate_single_async(self,
+                                     cognitive_action: Optional[str],
+                                     template_type: str,
+                                     model: str,
+                                     session: aiohttp.ClientSession,
+                                     iteration: int) -> Optional[GeneratedExample]:
+        """Asynchronously generate a single example"""
+        try:
+            # Generate prompt
+            prompt, params = generate_prompt(cognitive_action, template_type, iteration)
+
+            # Generate with Ollama via aiohttp
+            if self.ollama_client:
+                url = f"{self.ollama_client.base_url}/api/generate"
+                data = {
+                    "model": model,
+                    "prompt": prompt,
+                    "stream": False
+                }
+
+                async with session.post(url, json=data, timeout=aiohttp.ClientTimeout(total=120)) as response:
+                    if response.status == 200:
+                        result = await response.json()
+                        generated_text = result['response'].strip()
+                    else:
+                        raise Exception(f"HTTP {response.status}: {await response.text()}")
+            else:
+                # Fallback for testing without Ollama
+                generated_text = f"[Generated example for {params['cognitive_action']} in {params['domain']}]"
+
+            # Create example object
+            example = GeneratedExample(
+                text=generated_text,
+                primary_cognitive_action=params['cognitive_action'],
+                secondary_actions=[],
+                domain=params['domain'],
+                complexity=params['complexity_level'],
+                perspective=params['perspective'],
+                format_type=template_type,
+                metadata={
+                    'subject': params['subject'],
+                    'emotional_state': params['emotional_state'],
+                    'language_style': params['language_style'],
+                    'unique_angle': params['unique_angle'],
+                    'trigger': params['trigger'],
+                    'generation_timestamp': time.time(),
+                    'prompt_used': prompt
+                }
+            )
+
+            return example
+
+        except Exception as e:
+            error_info = {
+                'error': str(e),
+                'cognitive_action': cognitive_action,
+                'template_type': template_type,
+                'timestamp': time.time()
+            }
+            self.generation_stats['errors'].append(error_info)
+            print(f"Error generating example: {e}")
+            return None
+
+    async def _generate_batch_async(self,
+                                     batch_size: int,
+                                     cognitive_action: Optional[str],
+                                     template_type: str,
+                                     model: str) -> List[GeneratedExample]:
+        """Asynchronously generate a batch of examples using parallel requests"""
+        async with aiohttp.ClientSession() as session:
+            tasks = []
+            for i in range(batch_size):
+                task = self._generate_single_async(
+                    cognitive_action,
+                    template_type,
+                    model,
+                    session,
+                    self.generation_stats['total_generated'] + i
+                )
+                tasks.append(task)
+
+            # Process in parallel with semaphore to limit concurrency
+            semaphore = asyncio.Semaphore(self.max_parallel)
+
+            async def limited_task(task):
+                async with semaphore:
+                    return await task
+
+            results = await asyncio.gather(*[limited_task(t) for t in tasks])
+
+            # Filter out None results and update stats
+            examples = []
+            for example in results:
+                if example:
+                    self._update_stats(example)
+                    self.generated_examples.append(example)
+                    examples.append(example)
+
+            return examples
+
     def generate_batch(self,
                       batch_size: int = 10,
                       cognitive_action: Optional[str] = None,
                       template_type: str = "single",
-                      model: str = "llama3.2",
-                      delay: float = 0.1) -> List[GeneratedExample]:
-        """Generate a batch of examples"""
-        examples = []
+                      model: str = "gemma3:27b",
+                      delay: float = 0.0) -> List[GeneratedExample]:
+        """Generate a batch of examples using async parallel processing
 
-        for i in range(batch_size):
-            example = self.generate_single_example(cognitive_action, template_type, model)
-            if example:
-                examples.append(example)
-                print(f"Generated example {i+1}/{batch_size}: {example.primary_cognitive_action}")
+        Args:
+            batch_size: Number of examples to generate
+            cognitive_action: Specific cognitive action to generate (None for random)
+            template_type: Type of template to use
+            model: Ollama model name
+            delay: Legacy parameter, ignored when using async (kept for compatibility)
 
-            # Small delay to avoid overwhelming the API
-            time.sleep(delay)
+        Returns:
+            List of generated examples
+        """
+        print(f"Generating {batch_size} examples in parallel (max {self.max_parallel} concurrent)...")
 
+        # Run the async batch generation
+        try:
+            # Check if there's already an event loop
+            try:
+                loop = asyncio.get_running_loop()
+                # If we're already in an async context, create a task
+                print("Running in existing event loop...")
+                examples = asyncio.create_task(
+                    self._generate_batch_async(batch_size, cognitive_action, template_type, model)
+                )
+                return asyncio.run(examples)
+            except RuntimeError:
+                # No event loop, create one
+                examples = asyncio.run(
+                    self._generate_batch_async(batch_size, cognitive_action, template_type, model)
+                )
+        except Exception as e:
+            print(f"Error in batch generation: {e}")
+            print("Falling back to sequential generation...")
+            # Fallback to sequential generation
+            examples = []
+            for i in range(batch_size):
+                example = self.generate_single_example(cognitive_action, template_type, model)
+                if example:
+                    examples.append(example)
+                    print(f"Generated example {i+1}/{batch_size}: {example.primary_cognitive_action}")
+                if delay > 0:
+                    time.sleep(delay)
+            return examples
+
+        print(f"✓ Generated {len(examples)} examples")
         return examples
 
     def generate_stratified_dataset(self,
                                    total_examples: int = 1000,
-                                   model: str = "llama3.2") -> List[GeneratedExample]:
+                                   model: str = "gemma3:27b") -> List[GeneratedExample]:
         """Generate a stratified dataset ensuring coverage across cognitive actions"""
         examples_per_action = total_examples // len(COGNITIVE_ACTIONS)
         all_examples = []
@@ -145,7 +286,7 @@ class CognitiveDataGenerator:
     def generate_phase_dataset(self,
                               phase: str = "phase1",
                               target_examples: int = 20000,
-                              model: str = "llama3.2") -> List[GeneratedExample]:
+                              model: str = "gemma3:27b") -> List[GeneratedExample]:
         """Generate dataset according to specific phases from instructions"""
 
         if phase == "phase1_round1":
