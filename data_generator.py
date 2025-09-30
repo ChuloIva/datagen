@@ -226,18 +226,25 @@ class CognitiveDataGenerator:
 
         # Run the async batch generation
         try:
-            # Check if there's already an event loop
+            # Check if there's already an event loop (Jupyter/Colab)
             try:
                 loop = asyncio.get_running_loop()
-                # If we're already in an async context, create a task
-                print("Running in existing event loop...")
-                examples = asyncio.create_task(
+                # We're in an existing event loop (Jupyter/Colab), use nest_asyncio or await directly
+                import nest_asyncio
+                nest_asyncio.apply()
+                examples = asyncio.run(
                     self._generate_batch_async(batch_size, cognitive_action, template_type, model)
                 )
-                return asyncio.run(examples)
             except RuntimeError:
-                # No event loop, create one
+                # No event loop, create one (regular Python script)
                 examples = asyncio.run(
+                    self._generate_batch_async(batch_size, cognitive_action, template_type, model)
+                )
+            except ImportError:
+                # nest_asyncio not available, use alternative approach
+                print("nest_asyncio not found, using await in existing loop...")
+                loop = asyncio.get_running_loop()
+                examples = loop.run_until_complete(
                     self._generate_batch_async(batch_size, cognitive_action, template_type, model)
                 )
         except Exception as e:
